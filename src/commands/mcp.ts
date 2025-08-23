@@ -70,7 +70,7 @@ function splitServerArgsAndTool(
 }
 
 
-export async function startNpmServerAndConnect(opts: NpmServerOptions) {
+export async function startNpmServerAndConnect(opts: NpmServerOptions, verbose: boolean = false) {
   const npx = process.platform === "win32" ? "npx.cmd" : "npx";
   const pkgSpec = opts.version ? `${opts.pkg}@${opts.version}` : opts.pkg;
 
@@ -79,6 +79,11 @@ export async function startNpmServerAndConnect(opts: NpmServerOptions) {
     command: npx,
     args: ["-y", pkgSpec, ...(opts.args ?? [])],
     env: opts.env,
+    // Suppress server output unless in verbose mode
+    ...(verbose ? {} : {
+      stderr: 'pipe', // Redirect stderr to suppress server messages
+      stdout: 'pipe' // Redirect stdout to suppress server messages
+    })
   });
 
   // Create and connect the MCP client
@@ -96,6 +101,11 @@ export async function startNpmServerAndConnect(opts: NpmServerOptions) {
   };
 }
 
+function outputToolResult(result: any) {
+  // Just output the raw JSON result as requested
+  console.log(JSON.stringify(result, null, 2));
+}
+
 async function listAvailableTools(client: Client) {
   try {
     const toolsResponse = await client.listTools();
@@ -106,7 +116,7 @@ async function listAvailableTools(client: Client) {
   }
 }
 
-async function callToolByName(client: Client, toolName: string, toolArgs: string[], commandInstance: Command) {
+async function callToolByName(client: Client, toolName: string, toolArgs: string[], commandInstance: Command, verbose: boolean = false) {
   try {
     const tools = await listAvailableTools(client);
     const tool = tools.find(t => t.name === toolName);
@@ -117,32 +127,43 @@ async function callToolByName(client: Client, toolName: string, toolArgs: string
 
     // Parse tool arguments
     let parsedArgs: any = {};
-    console.log("tool", tool);
+    if (verbose) {
+      console.log("tool", tool);
+    }
     if (tool.inputSchema?.properties) {
       parsedArgs = parseCliArgsForTool(tool, toolArgs);
-      console.log("parsedArgs", parsedArgs);
+      if (verbose) {
+        console.log("parsedArgs", parsedArgs);
+      }
     } else if (toolArgs.length > 0) {
       // convention for schema-less tools
       parsedArgs = { path: toolArgs[0] };
     }
 
-    commandInstance.log(`Calling tool: ${toolName}`);
-    commandInstance.log(`Arguments: ${JSON.stringify(parsedArgs, null, 2)}`);
+    if (verbose) {
+      commandInstance.log(`Calling tool: ${toolName}`);
+      commandInstance.log(`Arguments: ${JSON.stringify(parsedArgs, null, 2)}`);
+    }
 
     const result = await client.callTool({
       name: toolName,
       arguments: parsedArgs
     });
 
-    commandInstance.log('\nTool Result:');
-    commandInstance.log(JSON.stringify(result, null, 2));
+    if (verbose) {
+      commandInstance.log('\nTool Result:');
+      commandInstance.log(JSON.stringify(result, null, 2));
+    } else {
+      // Clean output format for non-verbose mode
+      outputToolResult(result);
+    }
 
   } catch (error) {
     commandInstance.error(`Error calling tool: ${error}`);
   }
 }
 
-async function runInteractiveToolRunner(client: Client, commandInstance: Command) {
+async function runInteractiveToolRunner(client: Client, commandInstance: Command, verbose: boolean = false) {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
@@ -249,16 +270,22 @@ async function runInteractiveToolRunner(client: Client, commandInstance: Command
           }
 
           try {
-            commandInstance.log(`\nCalling tool: ${toolName}`);
-            commandInstance.log(`Arguments: ${JSON.stringify(toolArgs, null, 2)}`);
+            if (verbose) {
+              commandInstance.log(`\nCalling tool: ${toolName}`);
+              commandInstance.log(`Arguments: ${JSON.stringify(toolArgs, null, 2)}`);
+            }
 
             const result = await client.callTool({
               name: toolName,
               arguments: toolArgs
             });
 
-            commandInstance.log('\nTool Result:');
-            commandInstance.log(JSON.stringify(result, null, 2));
+            if (verbose) {
+              commandInstance.log('\nTool Result:');
+              commandInstance.log(JSON.stringify(result, null, 2));
+            } else {
+              outputToolResult(result);
+            }
           } catch (error) {
             commandInstance.error(`Error calling tool: ${error}`);
           }
@@ -310,6 +337,7 @@ export default class Mcp extends Command {
     clientName: Flags.string({description: 'identify your app'}),
     clientVersion: Flags.string({description: 'client version'}),
     interactive: Flags.boolean({char: 'i', description: 'start interactive tool runner'}),
+    verbose: Flags.boolean({char: 'V', description: 'show detailed output including tool schema and arguments'}),
   }
 
   public async run(): Promise<void> {
@@ -348,28 +376,38 @@ export default class Mcp extends Command {
     };
   
     try {
-      this.log(`Starting MCP server: ${options.pkg}`);
-      this.log(`Server args: ${JSON.stringify(serverArgs)}`);
-      const { client, close } = await startNpmServerAndConnect(options);
-  
-      this.log(`Successfully connected to MCP server: ${options.pkg}`);
-      // Optional: show actual tools
-      const toolList = await listAvailableTools(client);
-      this.log(`Tools: ${toolList.map(t => t.name).join(', ') || '(none reported)'}`);
+      if (flags.verbose) {
+        this.log(`Starting MCP server: ${options.pkg}`);
+        this.log(`Server args: ${JSON.stringify(serverArgs)}`);
+      }
+      const { client, close } = await startNpmServerAndConnect(options, flags.verbose);
+
+      if (flags.verbose) {
+        this.log(`Successfully connected to MCP server: ${options.pkg}`);
+        // Optional: show actual tools
+        const toolList = await listAvailableTools(client);
+        this.log(`Tools: ${toolList.map(t => t.name).join(', ') || '(none reported)'}`);
+      }
   
       if (inferredTool) {
-        await callToolByName(client, inferredTool, inferredToolArgs, this);
+        await callToolByName(client, inferredTool, inferredToolArgs, this, flags.verbose);
       } else if (flags.interactive) {
-        await runInteractiveToolRunner(client, this);
+        await runInteractiveToolRunner(client, this, flags.verbose);
       } else {
         // default: list tools
+        const toolList = await listAvailableTools(client);
         if (toolList.length > 0) {
-          this.log('\nAvailable tools:');
-          toolList.forEach((tool, i) => {
-            this.log(`${i + 1}. ${tool.name}${tool.description ? ` – ${tool.description}` : ''}`);
-          });
-          this.log('\nTip: you can now run without `--` e.g.:');
-          this.log(`${this.config.bin} ${this.id} ${args.package} -a C:\\ list_directory "C:\\Program Files"`);
+          if (flags.verbose) {
+            this.log('\nAvailable tools:');
+            toolList.forEach((tool, i) => {
+              this.log(`${i + 1}. ${tool.name}${tool.description ? ` – ${tool.description}` : ''}`);
+            });
+            this.log('\nTip: you can now run without `--` e.g.:');
+            this.log(`${this.config.bin} ${this.id} ${args.package} -a C:\\ list_directory "C:\\Program Files"`);
+          } else {
+            // In non-verbose mode, just show the tool names
+            this.log(toolList.map(t => t.name).join(', '));
+          }
         } else {
           this.log('No tools available');
         }
