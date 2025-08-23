@@ -1,398 +1,96 @@
-mcpcli
-=================
+# mcpcli
 
-CLI for any MCP server
+A CLI tool for interacting with any [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server
 
+## Installation
 
-[![oclif](https://img.shields.io/badge/cli-oclif-brightgreen.svg)](https://oclif.io)
-[![Version](https://img.shields.io/npm/v/mcpcli.svg)](https://npmjs.org/package/mcpcli)
-[![Downloads/week](https://img.shields.io/npm/dw/mcpcli.svg)](https://npmjs.org/package/mcpcli)
-
-
-<!-- toc -->
-* [Usage](#usage)
-* [Commands](#commands)
-<!-- tocstop -->
-# Usage
-<!-- usage -->
-```sh-session
-$ npm install -g mcpcli
-$ mcpcli COMMAND
-running command...
-$ mcpcli (--version)
-mcpcli/0.0.0 win32-x64 node-v20.18.0
-$ mcpcli --help [COMMAND]
-USAGE
-  $ mcpcli COMMAND
-...
-```
-<!-- usagestop -->
-# Commands
-<!-- commands -->
-* [`mcpcli hello PERSON`](#mcpcli-hello-person)
-* [`mcpcli hello world`](#mcpcli-hello-world)
-* [`mcpcli help [COMMAND]`](#mcpcli-help-command)
-* [`mcpcli plugins`](#mcpcli-plugins)
-* [`mcpcli plugins add PLUGIN`](#mcpcli-plugins-add-plugin)
-* [`mcpcli plugins:inspect PLUGIN...`](#mcpcli-pluginsinspect-plugin)
-* [`mcpcli plugins install PLUGIN`](#mcpcli-plugins-install-plugin)
-* [`mcpcli plugins link PATH`](#mcpcli-plugins-link-path)
-* [`mcpcli plugins remove [PLUGIN]`](#mcpcli-plugins-remove-plugin)
-* [`mcpcli plugins reset`](#mcpcli-plugins-reset)
-* [`mcpcli plugins uninstall [PLUGIN]`](#mcpcli-plugins-uninstall-plugin)
-* [`mcpcli plugins unlink [PLUGIN]`](#mcpcli-plugins-unlink-plugin)
-* [`mcpcli plugins update`](#mcpcli-plugins-update)
-
-## `mcpcli hello PERSON`
-
-Say hello
-
-```
-USAGE
-  $ mcpcli hello PERSON -f <value>
-
-ARGUMENTS
-  PERSON  Person to say hello to
-
-FLAGS
-  -f, --from=<value>  (required) Who is saying hello
-
-DESCRIPTION
-  Say hello
-
-EXAMPLES
-  $ mcpcli hello friend --from oclif
-  hello friend from oclif! (./src/commands/hello/index.ts)
+```bash
+npm install -g mcpcli
 ```
 
-_See code: [src/commands/hello/index.ts](https://github.com/makosst/mcpcli/blob/v0.0.0/src/commands/hello/index.ts)_
+## Usage
 
-## `mcpcli hello world`
+The `mcp` command allows you to start any MCP server and interact with its tools.
 
-Say hello world
+### Basic Syntax
 
-```
-USAGE
-  $ mcpcli hello world
-
-DESCRIPTION
-  Say hello world
-
-EXAMPLES
-  $ mcpcli hello world
-  hello world! (./src/commands/hello/world.ts)
+```bash
+mcpcli <package-name> [tool-name] [tool-args...]
 ```
 
-_See code: [src/commands/hello/world.ts](https://github.com/makosst/mcpcli/blob/v0.0.0/src/commands/hello/world.ts)_
+### Examples
 
-## `mcpcli help [COMMAND]`
-
-Display help for mcpcli.
-
-```
-USAGE
-  $ mcpcli help [COMMAND...] [-n]
-
-ARGUMENTS
-  COMMAND...  Command to show help for.
-
-FLAGS
-  -n, --nested-commands  Include all nested commands in the output.
-
-DESCRIPTION
-  Display help for mcpcli.
+**List available tools from a server:**
+```bash
+mcpcli @modelcontextprotocol/server-filesystem
 ```
 
-_See code: [@oclif/plugin-help](https://github.com/oclif/plugin-help/blob/v6.2.32/src/commands/help.ts)_
-
-## `mcpcli plugins`
-
-List installed plugins.
-
-```
-USAGE
-  $ mcpcli plugins [--json] [--core]
-
-FLAGS
-  --core  Show core plugins.
-
-GLOBAL FLAGS
-  --json  Format output as json.
-
-DESCRIPTION
-  List installed plugins.
-
-EXAMPLES
-  $ mcpcli plugins
+**Call a specific tool:**
+```bash
+mcpcli @modelcontextprotocol/server-filesystem list_directory /path/to/directory
 ```
 
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/index.ts)_
-
-## `mcpcli plugins add PLUGIN`
-
-Installs a plugin into mcpcli.
-
-```
-USAGE
-  $ mcpcli plugins add PLUGIN... [--json] [-f] [-h] [-s | -v]
-
-ARGUMENTS
-  PLUGIN...  Plugin to install.
-
-FLAGS
-  -f, --force    Force npm to fetch remote resources even if a local copy exists on disk.
-  -h, --help     Show CLI help.
-  -s, --silent   Silences npm output.
-  -v, --verbose  Show verbose npm output.
-
-GLOBAL FLAGS
-  --json  Format output as json.
-
-DESCRIPTION
-  Installs a plugin into mcpcli.
-
-  Uses npm to install plugins.
-
-  Installation of a user-installed plugin will override a core plugin.
-
-  Use the MCPCLI_NPM_LOG_LEVEL environment variable to set the npm loglevel.
-  Use the MCPCLI_NPM_REGISTRY environment variable to set the npm registry.
-
-ALIASES
-  $ mcpcli plugins add
-
-EXAMPLES
-  Install a plugin from npm registry.
-
-    $ mcpcli plugins add myplugin
-
-  Install a plugin from a github url.
-
-    $ mcpcli plugins add https://github.com/someuser/someplugin
-
-  Install a plugin from a github slug.
-
-    $ mcpcli plugins add someuser/someplugin
+**Pass server arguments:**
+```bash
+mcpcli @modelcontextprotocol/server-filesystem -a /allowed/directory list_directory /allowed/directory
 ```
 
-## `mcpcli plugins:inspect PLUGIN...`
-
-Displays installation properties of a plugin.
-
-```
-USAGE
-  $ mcpcli plugins inspect PLUGIN...
-
-ARGUMENTS
-  PLUGIN...  [default: .] Plugin to inspect.
-
-FLAGS
-  -h, --help     Show CLI help.
-  -v, --verbose
-
-GLOBAL FLAGS
-  --json  Format output as json.
-
-DESCRIPTION
-  Displays installation properties of a plugin.
-
-EXAMPLES
-  $ mcpcli plugins inspect myplugin
+**Start interactive mode:**
+```bash
+mcpcli @modelcontextprotocol/server-filesystem --interactive
 ```
 
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/inspect.ts)_
+## Command Options
 
-## `mcpcli plugins install PLUGIN`
+### Flags
 
-Installs a plugin into mcpcli.
+- `-v, --version=<value>` - Exact version or "latest" for the MCP server package
+- `-a, --args=<value>` - Arguments to pass to the server binary (multiple allowed)
+- `-e, --env=<value>` - Extra environment variables (KEY=VALUE format, multiple allowed)
+- `--client-name=<value>` - Identify your app to the server
+- `--client-version=<value>` - Client version to report to the server
+- `-i, --interactive` - Start interactive tool runner mode
 
-```
-USAGE
-  $ mcpcli plugins install PLUGIN... [--json] [-f] [-h] [-s | -v]
+### Arguments
 
-ARGUMENTS
-  PLUGIN...  Plugin to install.
+- `package` - **Required.** MCP server package name (e.g., `@modelcontextprotocol/server-filesystem`)
+- `tool` - **Optional.** Tool name to call immediately
+- `toolArgs` - **Optional.** Arguments to pass to the specified tool
 
-FLAGS
-  -f, --force    Force npm to fetch remote resources even if a local copy exists on disk.
-  -h, --help     Show CLI help.
-  -s, --silent   Silences npm output.
-  -v, --verbose  Show verbose npm output.
+## Interactive Mode
 
-GLOBAL FLAGS
-  --json  Format output as json.
+When using `--interactive` flag, you'll enter an interactive session where you can:
 
-DESCRIPTION
-  Installs a plugin into mcpcli.
+- `list` - Show all available tools from the server
+- `call <tool_name>` - Call a specific tool
+- `help` - Show available commands
+- `exit` - Exit interactive mode
 
-  Uses npm to install plugins.
+## Examples
 
-  Installation of a user-installed plugin will override a core plugin.
+### File System Server
 
-  Use the MCPCLI_NPM_LOG_LEVEL environment variable to set the npm loglevel.
-  Use the MCPCLI_NPM_REGISTRY environment variable to set the npm registry.
+```bash
+# List directory contents
+mcpcli @modelcontextprotocol/server-filesystem -a / list_directory /
 
-ALIASES
-  $ mcpcli plugins add
+# Read a file
+mcpcli @modelcontextprotocol/server-filesystem -a / read_file /path/to/file.txt
 
-EXAMPLES
-  Install a plugin from npm registry.
-
-    $ mcpcli plugins install myplugin
-
-  Install a plugin from a github url.
-
-    $ mcpcli plugins install https://github.com/someuser/someplugin
-
-  Install a plugin from a github slug.
-
-    $ mcpcli plugins install someuser/someplugin
+# Interactive mode
+mcpcli @modelcontextprotocol/server-filesystem -a / --interactive
 ```
 
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/install.ts)_
+### With Environment Variables
 
-## `mcpcli plugins link PATH`
-
-Links a plugin into the CLI for development.
-
-```
-USAGE
-  $ mcpcli plugins link PATH [-h] [--install] [-v]
-
-ARGUMENTS
-  PATH  [default: .] path to plugin
-
-FLAGS
-  -h, --help          Show CLI help.
-  -v, --verbose
-      --[no-]install  Install dependencies after linking the plugin.
-
-DESCRIPTION
-  Links a plugin into the CLI for development.
-
-  Installation of a linked plugin will override a user-installed or core plugin.
-
-  e.g. If you have a user-installed or core plugin that has a 'hello' command, installing a linked plugin with a 'hello'
-  command will override the user-installed or core plugin implementation. This is useful for development work.
-
-
-EXAMPLES
-  $ mcpcli plugins link myplugin
+```bash
+# Pass environment variables to the server
+mcpcli @modelcontextprotocol/server-filesystem -e DEBUG=1 -a / list_directory /
 ```
 
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/link.ts)_
+### With Specific Version
 
-## `mcpcli plugins remove [PLUGIN]`
-
-Removes a plugin from the CLI.
-
+```bash
+# Use a specific version of the server
+mcpcli @modelcontextprotocol/server-filesystem --version 0.1.0 -a / list_directory /
 ```
-USAGE
-  $ mcpcli plugins remove [PLUGIN...] [-h] [-v]
-
-ARGUMENTS
-  PLUGIN...  plugin to uninstall
-
-FLAGS
-  -h, --help     Show CLI help.
-  -v, --verbose
-
-DESCRIPTION
-  Removes a plugin from the CLI.
-
-ALIASES
-  $ mcpcli plugins unlink
-  $ mcpcli plugins remove
-
-EXAMPLES
-  $ mcpcli plugins remove myplugin
-```
-
-## `mcpcli plugins reset`
-
-Remove all user-installed and linked plugins.
-
-```
-USAGE
-  $ mcpcli plugins reset [--hard] [--reinstall]
-
-FLAGS
-  --hard       Delete node_modules and package manager related files in addition to uninstalling plugins.
-  --reinstall  Reinstall all plugins after uninstalling.
-```
-
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/reset.ts)_
-
-## `mcpcli plugins uninstall [PLUGIN]`
-
-Removes a plugin from the CLI.
-
-```
-USAGE
-  $ mcpcli plugins uninstall [PLUGIN...] [-h] [-v]
-
-ARGUMENTS
-  PLUGIN...  plugin to uninstall
-
-FLAGS
-  -h, --help     Show CLI help.
-  -v, --verbose
-
-DESCRIPTION
-  Removes a plugin from the CLI.
-
-ALIASES
-  $ mcpcli plugins unlink
-  $ mcpcli plugins remove
-
-EXAMPLES
-  $ mcpcli plugins uninstall myplugin
-```
-
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/uninstall.ts)_
-
-## `mcpcli plugins unlink [PLUGIN]`
-
-Removes a plugin from the CLI.
-
-```
-USAGE
-  $ mcpcli plugins unlink [PLUGIN...] [-h] [-v]
-
-ARGUMENTS
-  PLUGIN...  plugin to uninstall
-
-FLAGS
-  -h, --help     Show CLI help.
-  -v, --verbose
-
-DESCRIPTION
-  Removes a plugin from the CLI.
-
-ALIASES
-  $ mcpcli plugins unlink
-  $ mcpcli plugins remove
-
-EXAMPLES
-  $ mcpcli plugins unlink myplugin
-```
-
-## `mcpcli plugins update`
-
-Update installed plugins.
-
-```
-USAGE
-  $ mcpcli plugins update [-h] [-v]
-
-FLAGS
-  -h, --help     Show CLI help.
-  -v, --verbose
-
-DESCRIPTION
-  Update installed plugins.
-```
-
-_See code: [@oclif/plugin-plugins](https://github.com/oclif/plugin-plugins/blob/v5.4.46/src/commands/plugins/update.ts)_
-<!-- commandsstop -->
-# mcp
