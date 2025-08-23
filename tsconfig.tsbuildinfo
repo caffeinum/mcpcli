@@ -1,1 +1,1 @@
-{"root":["./src/index.ts","./src/commands/mcp.ts","./src/commands/hello/index.ts","./src/commands/hello/world.ts","./src/hooks/command_not_found.ts"],"version":"5.9.2"}
+{"root":["./src/client.ts","./src/daemon.ts","./src/index.ts","./src/commands/daemon.ts","./src/commands/mcp.ts","./src/commands/hello/index.ts","./src/commands/hello/world.ts","./src/hooks/command_not_found.ts","./src/lib/mcp-server.ts","./src/lib/mcp-utils.ts"],"version":"5.9.2"}

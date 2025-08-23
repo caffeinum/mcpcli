@@ -1,318 +1,11 @@
 import {Args, Command, Flags} from '@oclif/core'
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import McpClient, { NpmServerOptions } from '../client.js';
+import { splitServerArgsAndTool, parseCliArgsForTool } from '../lib/mcp-utils.js';
 import * as readline from 'readline';
+import { createHash } from 'crypto';
 
-export type NpmServerOptions = {
-  /** e.g. "@modelcontextprotocol/server-filesystem" */
-  pkg: string;
-  /** exact version or "latest"; optional */
-  version?: string;
-  /** args passed to the server binary (e.g., allowed directories) */
-  args?: string[];
-  /** extra env vars for the child process */
-  env?: Record<string, string>;
-  /** identify your app */
-  clientName?: string;
-  clientVersion?: string;
-};
-
-function isPathish(token: string): boolean {
-  // Windows: C:\..., C:/..., \\server\share
-  if (/^[A-Za-z]:[\\/]/.test(token)) return true;
-  if (/^\\\\/.test(token)) return true;
-
-  // POSIX-ish: /..., ./..., ../..., ~/...
-  if (/^(\/|\.{1,2}[\\/]|~[\\/])/.test(token)) return true;
-
-  // Also accept quoted-looking tokens as pathish (already one argv token)
-  if (/^["'].*["']$/.test(token)) return true;
-
-  return false;
-}
-
-/**
- * Split a possibly-greedy -a/--args list into:
- *   - serverArgs (to pass to the MCP server)
- *   - tool (if found)
- *   - toolArgs
- *
- * Heuristic: collect pathish tokens and option-looking tokens (start with '-')
- * until we hit the first non-pathish, non-flag token → that's the tool name.
- */
-function splitServerArgsAndTool(
-  flagArgs: string[] = [],
-  explicitTool?: string,
-  explicitToolArgs: string[] = []
-): { serverArgs: string[]; tool?: string; toolArgs: string[] } {
-  // If the user already supplied a positional tool, trust it.
-  if (explicitTool) {
-    return { serverArgs: flagArgs, tool: explicitTool, toolArgs: explicitToolArgs ?? [] };
-  }
-
-  const serverArgs: string[] = [];
-  let i = 0;
-
-  for (; i < flagArgs.length; i++) {
-    const t = flagArgs[i];
-    // Keep flags like --foo or -v (some servers accept options)
-    if (t.startsWith('-') || isPathish(t)) {
-      serverArgs.push(t);
-      continue;
-    }
-    // First non-flag, non-pathish token → treat as tool name
-    break;
-  }
-
-  const tool = flagArgs[i];
-  const toolArgs = i < flagArgs.length ? flagArgs.slice(i + 1) : [];
-  return { serverArgs, tool, toolArgs };
-}
-
-
-export async function startNpmServerAndConnect(opts: NpmServerOptions, verbose: boolean = false) {
-  const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-  const pkgSpec = opts.version ? `${opts.pkg}@${opts.version}` : opts.pkg;
-
-  // Launch the server via NPX; this downloads the package if missing.
-  const transport = new StdioClientTransport({
-    command: npx,
-    args: ["-y", pkgSpec, ...(opts.args ?? [])],
-    env: opts.env,
-    // Suppress server output unless in verbose mode
-    ...(verbose ? {} : {
-      stderr: 'pipe', // Redirect stderr to suppress server messages
-      stdout: 'pipe' // Redirect stdout to suppress server messages
-    })
-  });
-
-  // Create and connect the MCP client
-  const client = new Client({
-    name: opts.clientName ?? "ts-bootstrap",
-    version: opts.clientVersion ?? "1.0.0",
-  });
-
-  await client.connect(transport);
-
-  return {
-    client,
-    /** Gracefully close transport + child process */
-    close: () => transport.close(),
-  };
-}
-
-function outputToolResult(result: any) {
-  // Just output the raw JSON result as requested
-  console.log(JSON.stringify(result, null, 2));
-}
-
-async function listAvailableTools(client: Client) {
-  try {
-    const toolsResponse = await client.listTools();
-    return toolsResponse.tools;
-  } catch (error) {
-    console.error('Error listing tools:', error);
-    return [];
-  }
-}
-
-async function callToolByName(client: Client, toolName: string, toolArgs: string[], commandInstance: Command, verbose: boolean = false) {
-  try {
-    const tools = await listAvailableTools(client);
-    const tool = tools.find(t => t.name === toolName);
-    if (!tool) {
-      commandInstance.error(`Tool '${toolName}' not found. Available tools: ${tools.map(t => t.name).join(', ')}`);
-      return;
-    }
-
-    // Parse tool arguments
-    let parsedArgs: any = {};
-    if (verbose) {
-      console.log("tool", tool);
-    }
-    if (tool.inputSchema?.properties) {
-      parsedArgs = parseCliArgsForTool(tool, toolArgs);
-      if (verbose) {
-        console.log("parsedArgs", parsedArgs);
-      }
-    } else if (toolArgs.length > 0) {
-      // convention for schema-less tools
-      parsedArgs = { path: toolArgs[0] };
-    }
-
-    if (verbose) {
-      commandInstance.log(`Calling tool: ${toolName}`);
-      commandInstance.log(`Arguments: ${JSON.stringify(parsedArgs, null, 2)}`);
-    }
-
-    const result = await client.callTool({
-      name: toolName,
-      arguments: parsedArgs
-    });
-
-    if (verbose) {
-      commandInstance.log('\nTool Result:');
-      commandInstance.log(JSON.stringify(result, null, 2));
-    } else {
-      // Clean output format for non-verbose mode
-      outputToolResult(result);
-    }
-
-  } catch (error) {
-    commandInstance.error(`Error calling tool: ${error}`);
-  }
-}
-
-async function runInteractiveToolRunner(client: Client, commandInstance: Command, verbose: boolean = false) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const question = (query: string): Promise<string> => {
-    return new Promise(resolve => rl.question(query, resolve));
-  };
-
-  commandInstance.log('\n=== Interactive MCP Tool Runner ===');
-  commandInstance.log('Commands:');
-  commandInstance.log('  list     - List available tools');
-  commandInstance.log('  call     - Call a tool by name');
-  commandInstance.log('  help     - Show this help');
-  commandInstance.log('  exit     - Exit interactive mode');
-  commandInstance.log('');
-
-  while (true) {
-    try {
-      const input = await question('mcp> ');
-
-      if (!input.trim()) continue;
-
-      const [command, ...args] = input.trim().split(/\s+/);
-
-      switch (command.toLowerCase()) {
-        case 'list':
-          const availableTools = await listAvailableTools(client);
-          if (availableTools.length === 0) {
-            commandInstance.log('No tools available');
-          } else {
-            commandInstance.log('\nAvailable tools:');
-            availableTools.forEach((tool, index) => {
-              commandInstance.log(`${index + 1}. ${tool.name}`);
-              if (tool.description) {
-                commandInstance.log(`   ${tool.description}`);
-              }
-              if (tool.inputSchema) {
-                commandInstance.log(`   Schema: ${JSON.stringify(tool.inputSchema, null, 2)}`);
-              }
-              commandInstance.log('');
-            });
-          }
-          break;
-
-        case 'call':
-          if (args.length === 0) {
-            commandInstance.log('Usage: call <tool_name>');
-            break;
-          }
-
-          const toolName = args[0];
-          const callTools = await listAvailableTools(client);
-          const tool = callTools.find(t => t.name === toolName);
-
-          if (!tool) {
-            commandInstance.log(`Tool '${toolName}' not found. Use 'list' to see available tools.`);
-            break;
-          }
-
-          let toolArgs: any = {};
-
-          // If tool has input schema, ask for parameters
-          if (tool.inputSchema?.properties) {
-            const properties = tool.inputSchema.properties as Record<string, any>;
-
-            for (const [paramName, paramSchema] of Object.entries(properties)) {
-              const required = tool.inputSchema.required?.includes(paramName) || false;
-              const paramType = paramSchema.type || 'string';
-              const description = paramSchema.description || '';
-
-              let prompt = `Enter ${paramName} (${paramType})`;
-              if (description) prompt += ` - ${description}`;
-              if (required) prompt += ' [required]';
-              prompt += ': ';
-
-              const value = await question(prompt);
-
-              if (required && !value.trim()) {
-                commandInstance.log(`Parameter '${paramName}' is required.`);
-                toolArgs = null;
-                break;
-              }
-
-              // Parse value based on type
-              if (value.trim()) {
-                switch (paramType) {
-                  case 'number':
-                    toolArgs[paramName] = parseFloat(value);
-                    break;
-                  case 'boolean':
-                    toolArgs[paramName] = value.toLowerCase() === 'true';
-                    break;
-                  case 'array':
-                    toolArgs[paramName] = value.split(',').map(v => v.trim());
-                    break;
-                  default:
-                    toolArgs[paramName] = value;
-                }
-              }
-            }
-
-            if (toolArgs === null) continue; // Skip execution if required param missing
-          }
-
-          try {
-            if (verbose) {
-              commandInstance.log(`\nCalling tool: ${toolName}`);
-              commandInstance.log(`Arguments: ${JSON.stringify(toolArgs, null, 2)}`);
-            }
-
-            const result = await client.callTool({
-              name: toolName,
-              arguments: toolArgs
-            });
-
-            if (verbose) {
-              commandInstance.log('\nTool Result:');
-              commandInstance.log(JSON.stringify(result, null, 2));
-            } else {
-              outputToolResult(result);
-            }
-          } catch (error) {
-            commandInstance.error(`Error calling tool: ${error}`);
-          }
-          break;
-
-        case 'help':
-          commandInstance.log('\nCommands:');
-          commandInstance.log('  list     - List available tools');
-          commandInstance.log('  call     - Call a tool by name');
-          commandInstance.log('  help     - Show this help');
-          commandInstance.log('  exit     - Exit interactive mode');
-          break;
-
-        case 'exit':
-        case 'quit':
-          commandInstance.log('Exiting interactive mode...');
-          rl.close();
-          return;
-
-        default:
-          commandInstance.log(`Unknown command: ${command}. Type 'help' for available commands.`);
-      }
-    } catch (error) {
-      commandInstance.error(`Error: ${error}`);
-    }
-  }
-}
+// Re-export the server functionality for the daemon
+export { startNpmServerAndConnect } from '../lib/mcp-server.js';
 
 export default class Mcp extends Command {
   static override args = {
@@ -321,7 +14,7 @@ export default class Mcp extends Command {
     toolArgs: Args.string({description: 'Tool arguments (optional)', multiple: true}),
   }
 
-  static override description = 'Start an MCP server and connect to it with interactive tool runner'
+  static override description = 'Connect to MCP daemon and run tools'
 
   static override examples = [
     '<%= config.bin %> <%= command.id %> @modelcontextprotocol/server-filesystem',
@@ -338,12 +31,33 @@ export default class Mcp extends Command {
     clientVersion: Flags.string({description: 'client version'}),
     interactive: Flags.boolean({char: 'i', description: 'start interactive tool runner'}),
     verbose: Flags.boolean({char: 'V', description: 'show detailed output including tool schema and arguments'}),
+    daemonUrl: Flags.string({description: 'daemon URL', default: 'http://localhost:3001'}),
+    serverId: Flags.string({description: 'server ID to use (auto-generated if not provided)'}),
   }
 
-  public async run(): Promise<void> {
+  private client!: McpClient;
+
+  private async ensureDaemonRunning(): Promise<void> {
+    const { flags } = await this.parse(Mcp);
+
+    this.client = new McpClient(flags.daemonUrl);
+
+    try {
+      await this.client.isDaemonRunning();
+    } catch (error) {
+      this.error(`MCP daemon not running at ${flags.daemonUrl}. Please start it with 'mcp daemon'`);
+    }
+  }
+
+  private generateServerId(packageName: string): string {
+    // Generate a consistent server ID based on package name and args
+    const argsStr = (this.argv ?? []).join('-');
+    const hash = createHash('md5').update(`${packageName}-${argsStr}`).digest('hex').substring(0, 8);
+    return `${packageName.split('/').pop()}-${hash}`;
+  }
+
+  private async ensureServerRunning(): Promise<string> {
     const { args, flags } = await this.parse(Mcp);
-
-
 
     // Parse environment variables
     const env: Record<string, string> = {};
@@ -353,143 +67,297 @@ export default class Mcp extends Command {
         if (key && valueParts.length > 0) env[key] = valueParts.join('=');
       }
     }
-  
+
     // Heuristically split server args (-a ...) from any accidentally appended tool tokens
     const rawFlagArgs = flags.args ?? [];
     let inferredTool = args.tool as string | undefined;
     let inferredToolArgs = (Array.isArray(args.toolArgs) ? args.toolArgs : (args.toolArgs ? [args.toolArgs] : [])) as string[];
-  
+
     const split = splitServerArgsAndTool(rawFlagArgs, inferredTool, inferredToolArgs);
     const serverArgs = split.serverArgs;
     if (!inferredTool && split.tool) {
       inferredTool = split.tool;
       inferredToolArgs = split.toolArgs;
     }
-  
+
+    const serverId = flags.serverId || this.generateServerId(args.package);
+
     const options: NpmServerOptions = {
       pkg: args.package,
       version: flags.version,
-      args: serverArgs,       // ✅ only the server's args now
+      args: serverArgs,
       env: Object.keys(env).length ? env : undefined,
       clientName: flags.clientName,
       clientVersion: flags.clientVersion,
     };
-  
-    try {
-      if (flags.verbose) {
-        this.log(`Starting MCP server: ${options.pkg}`);
-        this.log(`Server args: ${JSON.stringify(serverArgs)}`);
-      }
-      const { client, close } = await startNpmServerAndConnect(options, flags.verbose);
 
+    try {
+      // Try to start the server (will fail if already exists, which is fine)
+      await this.client.startServer(serverId, options);
       if (flags.verbose) {
-        this.log(`Successfully connected to MCP server: ${options.pkg}`);
-        // Optional: show actual tools
-        const toolList = await listAvailableTools(client);
-        this.log(`Tools: ${toolList.map(t => t.name).join(', ') || '(none reported)'}`);
+        this.log(`Started MCP server: ${args.package} as ${serverId}`);
       }
-  
-      if (inferredTool) {
-        await callToolByName(client, inferredTool, inferredToolArgs, this, flags.verbose);
-      } else if (flags.interactive) {
-        await runInteractiveToolRunner(client, this, flags.verbose);
+    } catch (error: any) {
+      // If error is about server already existing (400 status), that's fine
+      const isServerExistsError = error.response?.status === 400 &&
+                                 error.response?.data?.error?.includes('already exists');
+      if (!isServerExistsError) {
+        throw error;
+      }
+      if (flags.verbose) {
+        this.log(`Using existing MCP server: ${serverId}`);
+      }
+    }
+
+    return serverId;
+  }
+
+  private async callToolByName(serverId: string, toolName: string, toolArgs: string[], verbose: boolean = false) {
+    try {
+      const toolsResponse = await this.client.listTools(serverId);
+      const tool = toolsResponse.tools.find(t => t.name === toolName);
+
+      if (!tool) {
+        this.error(`Tool '${toolName}' not found. Available tools: ${toolsResponse.tools.map(t => t.name).join(', ')}`);
+        return;
+      }
+
+      // Parse tool arguments
+      let parsedArgs: any = {};
+      if (verbose) {
+        this.log("tool", tool);
+      }
+      if (tool.inputSchema?.properties) {
+        parsedArgs = parseCliArgsForTool(tool, toolArgs);
+        if (verbose) {
+          this.log("parsedArgs", parsedArgs);
+        }
+      } else if (toolArgs.length > 0) {
+        // convention for schema-less tools
+        parsedArgs = { path: toolArgs[0] };
+      }
+
+      if (verbose) {
+        this.log(`Calling tool: ${toolName}`);
+        this.log(`Arguments: ${JSON.stringify(parsedArgs, null, 2)}`);
+      }
+
+      const result = await this.client.callTool(serverId, toolName, parsedArgs);
+
+      if (verbose) {
+        this.log('\nTool Result:');
+        this.log(JSON.stringify(result, null, 2));
       } else {
-        // default: list tools
-        const toolList = await listAvailableTools(client);
-        if (toolList.length > 0) {
+        // Clean output format for non-verbose mode
+        this.log(JSON.stringify(result.result, null, 2));
+      }
+
+    } catch (error) {
+      this.error(`Error calling tool: ${error}`);
+    }
+  }
+
+  private async runInteractiveToolRunner(serverId: string, verbose: boolean = false) {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+
+    const question = (query: string): Promise<string> => {
+      return new Promise(resolve => rl.question(query, resolve));
+    };
+
+    this.log(`\n=== Interactive MCP Tool Runner (${serverId}) ===`);
+    this.log('Commands:');
+    this.log('  list     - List available tools');
+    this.log('  call     - Call a tool by name');
+    this.log('  help     - Show this help');
+    this.log('  exit     - Exit interactive mode');
+    this.log('');
+
+    while (true) {
+      try {
+        const input = await question('mcp> ');
+
+        if (!input.trim()) continue;
+
+        const [command, ...args] = input.trim().split(/\s+/);
+
+        switch (command.toLowerCase()) {
+          case 'list': {
+            const toolsResponse = await this.client.listTools(serverId);
+            if (toolsResponse.tools.length === 0) {
+              this.log('No tools available');
+            } else {
+              this.log('\nAvailable tools:');
+              toolsResponse.tools.forEach((tool, index) => {
+                this.log(`${index + 1}. ${tool.name}`);
+                if (tool.description) {
+                  this.log(`   ${tool.description}`);
+                }
+                if (tool.inputSchema) {
+                  this.log(`   Schema: ${JSON.stringify(tool.inputSchema, null, 2)}`);
+                }
+                this.log('');
+              });
+            }
+            break;
+          }
+
+          case 'call': {
+            if (args.length === 0) {
+              this.log('Usage: call <tool_name>');
+              break;
+            }
+
+            const toolName = args[0];
+            const toolsResponse = await this.client.listTools(serverId);
+            const tool = toolsResponse.tools.find(t => t.name === toolName);
+
+            if (!tool) {
+              this.log(`Tool '${toolName}' not found. Use 'list' to see available tools.`);
+              break;
+            }
+
+            let toolArgs: any = {};
+
+            // If tool has input schema, ask for parameters
+            if (tool.inputSchema?.properties) {
+              const properties = tool.inputSchema.properties as Record<string, any>;
+
+              for (const [paramName, paramSchema] of Object.entries(properties)) {
+                const required = tool.inputSchema.required?.includes(paramName) || false;
+                const paramType = paramSchema.type || 'string';
+                const description = paramSchema.description || '';
+
+                let prompt = `Enter ${paramName} (${paramType})`;
+                if (description) prompt += ` - ${description}`;
+                if (required) prompt += ' [required]';
+                prompt += ': ';
+
+                const value = await question(prompt);
+
+                if (required && !value.trim()) {
+                  this.log(`Parameter '${paramName}' is required.`);
+                  toolArgs = null;
+                  break;
+                }
+
+                // Parse value based on type
+                if (value.trim()) {
+                  switch (paramType) {
+                    case 'number':
+                      toolArgs[paramName] = parseFloat(value);
+                      break;
+                    case 'boolean':
+                      toolArgs[paramName] = value.toLowerCase() === 'true';
+                      break;
+                    case 'array':
+                      toolArgs[paramName] = value.split(',').map((v: string) => v.trim());
+                      break;
+                    default:
+                      toolArgs[paramName] = value;
+                  }
+                }
+              }
+
+              if (toolArgs === null) continue; // Skip execution if required param missing
+            }
+
+            try {
+              if (verbose) {
+                this.log(`\nCalling tool: ${toolName}`);
+                this.log(`Arguments: ${JSON.stringify(toolArgs, null, 2)}`);
+              }
+
+              const result = await this.client.callTool(serverId, toolName, toolArgs);
+
+              if (verbose) {
+                this.log('\nTool Result:');
+                this.log(JSON.stringify(result, null, 2));
+              } else {
+                this.log(JSON.stringify(result.result, null, 2));
+              }
+            } catch (error) {
+              this.error(`Error calling tool: ${error}`);
+            }
+            break;
+          }
+
+          case 'help':
+            this.log('\nCommands:');
+            this.log('  list     - List available tools');
+            this.log('  call     - Call a tool by name');
+            this.log('  help     - Show this help');
+            this.log('  exit     - Exit interactive mode');
+            break;
+
+          case 'exit':
+          case 'quit':
+            this.log('Exiting interactive mode...');
+            rl.close();
+            return;
+
+          default:
+            this.log(`Unknown command: ${command}. Type 'help' for available commands.`);
+        }
+      } catch (error) {
+        this.error(`Error: ${error}`);
+      }
+    }
+  }
+
+  public async run(): Promise<void> {
+    const { args, flags } = await this.parse(Mcp);
+
+    // Heuristically split server args (-a ...) from any accidentally appended tool tokens
+    const rawFlagArgs = flags.args ?? [];
+    let inferredTool = args.tool as string | undefined;
+    let inferredToolArgs = (Array.isArray(args.toolArgs) ? args.toolArgs : (args.toolArgs ? [args.toolArgs] : [])) as string[];
+
+    const split = splitServerArgsAndTool(rawFlagArgs, inferredTool, inferredToolArgs);
+    if (!inferredTool && split.tool) {
+      inferredTool = split.tool;
+      inferredToolArgs = split.toolArgs;
+    }
+
+    try {
+      // Ensure daemon is running
+      await this.ensureDaemonRunning();
+
+      // Ensure server is running
+      const serverId = await this.ensureServerRunning();
+
+      if (inferredTool) {
+        // Call specific tool
+        await this.callToolByName(serverId, inferredTool, inferredToolArgs, flags.verbose);
+      } else if (flags.interactive) {
+        // Start interactive mode
+        await this.runInteractiveToolRunner(serverId, flags.verbose);
+      } else {
+        // Default: list tools
+        const toolsResponse = await this.client.listTools(serverId);
+        if (toolsResponse.tools.length > 0) {
           if (flags.verbose) {
             this.log('\nAvailable tools:');
-            toolList.forEach((tool, i) => {
+            toolsResponse.tools.forEach((tool, i) => {
               this.log(`${i + 1}. ${tool.name}${tool.description ? ` – ${tool.description}` : ''}`);
             });
             this.log('\nTip: you can now run without `--` e.g.:');
             this.log(`${this.config.bin} ${this.id} ${args.package} -a C:\\ list_directory "C:\\Program Files"`);
           } else {
             // In non-verbose mode, just show the tool names
-            this.log(toolList.map(t => t.name).join(', '));
+            this.log(toolsResponse.tools.map(t => t.name).join(', '));
           }
         } else {
           this.log('No tools available');
         }
-  
-        process.on('SIGINT', () => {
-          this.log('Closing connection...');
-          close();
-          process.exit(0);
-        });
-        await new Promise(() => {});
       }
-  
-      close();
+
     } catch (error) {
-      this.error(`Failed to start MCP server: ${error}`);
+      this.error(`Failed to connect to MCP daemon: ${error}`);
     }
   }
-  
-}
-
-function coerceByType(raw: string, schema?: any) {
-  const t = schema?.type ?? 'string';
-  if (t === 'number') return Number(raw);
-  if (t === 'integer') return parseInt(raw, 10);
-  if (t === 'boolean') return /^true$/i.test(raw);
-  if (t === 'array') {
-    try { return JSON.parse(raw); } catch { return raw.split(',').map(s => s.trim()); }
-  }
-  if (t === 'object') { try { return JSON.parse(raw); } catch {} }
-  return raw;
-}
-
-function parseCliArgsForTool(tool: any, argv: string[]) {
-  const props: Record<string, any> = (tool.inputSchema?.properties ?? {}) as any;
-  const required: string[] = Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required : [];
-  const keys = Object.keys(props);
-
-  const kvArgs: Record<string, any> = {};
-  const pos: string[] = [];
-
-  for (const a of argv) {
-    const i = a.indexOf('=');
-    if (i > 0) {
-      const k = a.slice(0, i);
-      const v = a.slice(i + 1);
-      kvArgs[k] = coerceByType(v, props[k]);
-    } else {
-      pos.push(a);
-    }
-  }
-
-  const out: Record<string, any> = { ...kvArgs };
-
-  // Single required key (e.g., 'path'): accept the whole remainder as one value (handles spaces)
-  if (required.length === 1 && out[required[0]] === undefined && pos.length > 0) {
-    out[required[0]] = coerceByType(pos.join(' '), props[required[0]]);
-    pos.length = 0;
-  }
-
-  // If still nothing and property named 'path' exists, prefer mapping to it
-  if (props.path && out.path === undefined && pos.length > 0) {
-    if (keys.length === 1) {
-      out.path = coerceByType(pos.join(' '), props.path);
-      pos.length = 0;
-    } else {
-      out.path = coerceByType(pos.shift()!, props.path);
-    }
-  }
-
-  // Fallback: map remaining by property order
-  for (let i = 0; i < pos.length && i < keys.length; i++) {
-    const k = keys[i];
-    if (out[k] === undefined) out[k] = coerceByType(pos[i], props[k]);
-  }
-
-  // Validate required
-  for (const r of required) {
-    if (out[r] === undefined) {
-      throw new Error(`Missing required parameter: ${r}`);
-    }
-  }
-  return out;
 }
 
 
