@@ -14,6 +14,10 @@ oclif CLI (`mcp`) for any MCP server. Fork of makosst/mcp, whose npm package
 
 So: **run `npm run build` and commit `dist/` with any `src/` change.**
 
+`.github/workflows/dist-freshness.yml` enforces this — it rebuilds and fails if
+committed `dist/` differs from a fresh build. `package-lock.json` pins the
+compiler, so keep npm as the lockfile of record (`bun.lock` is gitignored).
+
 ## health check
 
 `mcp --version` and `mcp --help` are answered by oclif from package.json and
