@@ -1,0 +1,38 @@
+name: dist freshness
+
+# dist/ is committed on purpose (consumers install via `bun add
+# github:caffeinum/mcpcli`, and bun neither runs untrusted prepare scripts nor
+# installs devDeps for git deps). That means an edit to src/ without a rebuild
+# ships stale code silently. This job makes that loud.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dist-is-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: dist/ must match a fresh build of src/
+        run: |
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            echo "::error file=package.json::dist/ is stale. Run 'npm run build' and commit dist/."
+            git --no-pager diff --stat -- dist
+            git status --porcelain -- dist
+            exit 1
+          fi
+          echo "dist/ is current"
+
+      - name: installed binary must load dist/
+        run: |
+          # `mcp --version` and `mcp --help` exit 0 even when dist/ is missing;
+          # `daemon --help` forces oclif to import the command class.
+          node ./bin/run.js daemon --help
