@@ -1,0 +1,57 @@
+dist/client.d.ts
+  s_5c719c7084a02a::t_497eec1cd06b00 1-52
+dist/client.js
+  s_5c719c7084a02a::t_804a8fa29e6c49 1-63
+dist/commands/daemon.d.ts
+  s_5c719c7084a02a::t_537ac0ce9b98d8 1-11
+dist/commands/daemon.js
+  s_5c719c7084a02a::t_d4cc315efdb545 1-38
+dist/commands/hello/index.d.ts
+  s_5c719c7084a02a::t_d7f46157a68ac2 1-12
+dist/commands/hello/index.js
+  s_5c719c7084a02a::t_91f6f278216329 1-19
+dist/commands/hello/world.d.ts
+  s_5c719c7084a02a::t_a7590ae12d662e 1-8
+dist/commands/hello/world.js
+  s_5c719c7084a02a::t_9d39fdf9f1abf5 1-14
+dist/commands/mcp.d.ts
+  s_5c719c7084a02a::t_e4ff835740a07f 1-29
+dist/commands/mcp.js
+  s_5c719c7084a02a::t_cee23576fbedc7 1-324
+dist/daemon.d.ts
+  s_5c719c7084a02a::t_ae9b26d70a0e51 1-12
+dist/daemon.js
+  s_5c719c7084a02a::t_b4a32ef4865be5 1-166
+dist/hooks/command_not_found.d.ts
+  s_5c719c7084a02a::t_fdb985c8804d06 1-3
+dist/hooks/command_not_found.js
+  s_5c719c7084a02a::t_24a0cc07387f5f 1-20
+dist/index.d.ts
+  s_5c719c7084a02a::t_45ad499e0f3975 1
+dist/index.js
+  s_5c719c7084a02a::t_6a56fba8f5d2dc 1
+dist/lib/mcp-server.d.ts
+  s_5c719c7084a02a::t_632ee394535aa9 1-29
+dist/lib/mcp-server.js
+  s_5c719c7084a02a::t_26282d72aeabcc 1-23
+dist/lib/mcp-utils.d.ts
+  s_5c719c7084a02a::t_159bc7050e79ae 1-17
+dist/lib/mcp-utils.js
+  s_5c719c7084a02a::t_398cd40871d803 1-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.22",
+  "base_commit_sha": "7f3a329e708bcc2cb4a2b7c0ebbf81ade8b97fb0",
+  "prompts": {},
+  "sessions": {
+    "s_5c719c7084a02a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f56a10a-d8b9-4167-a15e-96b757f970e7",
+        "model": "unknown"
+      },
+      "human_author": "Aleksey Bykhun <theisease@gmail.com>"
+    }
+  }
+}
