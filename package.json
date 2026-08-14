@@ -1,12 +1,12 @@
 {
-  "name": "mcp",
+  "name": "@caffeinum/mcp",
   "description": "CLI for any MCP server",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "author": "makosst",
   "bin": {
     "mcp": "./bin/run.js"
   },
-  "bugs": "https://github.com/makosst/mcp/issues",
+  "bugs": "https://github.com/caffeinum/mcpcli/issues",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.17.4",
     "@oclif/core": "^4",
@@ -43,7 +43,7 @@
     "./dist",
     "./oclif.manifest.json"
   ],
-  "homepage": "https://github.com/makosst/mcp",
+  "homepage": "https://github.com/caffeinum/mcpcli",
   "keywords": [
     "oclif"
   ],
@@ -68,7 +68,7 @@
       "command_not_found": "./dist/hooks/command_not_found.js"
     }
   },
-  "repository": "makosst/mcpcli",
+  "repository": "caffeinum/mcpcli",
   "scripts": {
     "build": "shx rm -rf dist && tsc -b",
     "lint": "eslint",

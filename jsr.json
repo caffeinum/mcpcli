@@ -1,6 +1,6 @@
 {
-  "name": "@makosst/mcpcli",
-  "version": "0.0.0",
+  "name": "@caffeinum/mcp",
+  "version": "0.1.0",
   "description": "CLI for any MCP server",
   "exports": {
     ".": "./dist/index.js",
